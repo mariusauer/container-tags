@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            archive: tar.gz
+          - goos: windows
+            goarch: amd64
+            archive: zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.x'
+
+      - name: Build binary
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          BIN_NAME="container-tags"
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          OUTDIR="dist/${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p "$OUTDIR"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o "$OUTDIR/$BIN_NAME$EXT" ./cmd/container-tags
+
+      - name: Package archive
+        run: |
+          set -euo pipefail
+          OUTDIR="dist/${{ matrix.goos }}_${{ matrix.goarch }}"
+          ARCHIVE_BASENAME="container-tags_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd "$OUTDIR" && zip -r "../$ARCHIVE_BASENAME.zip" "container-tags.exe")
+          else
+            (cd "$OUTDIR" && tar -czf "../$ARCHIVE_BASENAME.tar.gz" "container-tags")
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Show files
+        run: ls -R dist
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*.{zip,tar.gz}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

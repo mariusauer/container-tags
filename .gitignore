@@ -1,0 +1,18 @@
+# Build artifacts
+bin/
+container-tags
+
+
+# Go build cache (local override)
+.gocache/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+
