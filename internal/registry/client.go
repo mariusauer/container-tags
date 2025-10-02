@@ -349,7 +349,8 @@ func (c *Client) inferVersionFromManifestPayload(ctx context.Context, base, repo
         c.logDebug("no labels found in config blob")
         return digest, "", false, nil
     }
-    // Look for common version labels (and try to extract semver-looking values)
+    // Look for common version labels (and try to extract semver-looking values).
+    // Be conservative to avoid picking base image/runtime versions (e.g., JAVA_VERSION).
     keys := []string{
         "alpha.talos.dev/version",
         "org.opencontainers.image.version",
@@ -359,8 +360,8 @@ func (c *Client) inferVersionFromManifestPayload(ctx context.Context, base, repo
         "build.version",
         "vcs.tag",
         "org.opencontainers.image.ref.name",
-        "org.opencontainers.image.title",
-        "org.opencontainers.image.description",
+        // Intentionally exclude title/description: they often contain unrelated versions
+        // like OS, JVM or tooling versions.
         "version",
     }
     for _, k := range keys {
@@ -372,40 +373,9 @@ func (c *Client) inferVersionFromManifestPayload(ctx context.Context, base, repo
         }
     }
 
-    // Heuristic: scan env for VERSION-like entries
-    var envs [][]string
-    if len(cfg.Config.Env) > 0 {
-        envs = append(envs, cfg.Config.Env)
-    }
-    if len(cfg.ContainerConfig.Env) > 0 {
-        envs = append(envs, cfg.ContainerConfig.Env)
-    }
-    for _, arr := range envs {
-        for _, e := range arr {
-            if i := strings.IndexByte(e, '='); i > 0 {
-                key := strings.ToLower(strings.TrimSpace(e[:i]))
-                val := strings.TrimSpace(e[i+1:])
-                if strings.Contains(key, "version") {
-                    if vv := extractVersionFromString(val); vv != "" {
-                        c.logInfo("inferred from env %s=%s", key, vv)
-                        return digest, vv, true, nil
-                    }
-                }
-            }
-        }
-    }
-
-    // Heuristic: scan history messages for semver-like tokens
-    for _, h := range cfg.History {
-        if vv := extractVersionFromString(h.CreatedBy); vv != "" {
-            c.logInfo("inferred from history.created_by=%s", vv)
-            return digest, vv, true, nil
-        }
-        if vv := extractVersionFromString(h.Comment); vv != "" {
-            c.logInfo("inferred from history.comment=%s", vv)
-            return digest, vv, true, nil
-        }
-    }
+    // Avoid using generic ENV/history heuristics as they often include
+    // base image or runtime versions (e.g., JAVA_VERSION=21.0.8) which are
+    // unrelated to the application version.
     return digest, "", false, nil
 }
 
@@ -421,8 +391,6 @@ func pickVersionFromAnnotations(ann map[string]string) string {
         "app.kubernetes.io/version",
         "vcs.tag",
         "org.opencontainers.image.ref.name",
-        "org.opencontainers.image.title",
-        "org.opencontainers.image.description",
         "version",
     } {
         if vv := extractVersionFromString(ann[k]); vv != "" {
