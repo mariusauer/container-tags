@@ -453,13 +453,6 @@ func extractVersionFromString(s string) string {
         if semverRe.MatchString(part) {
             return semverRe.FindString(part)
         }
-        if part != "" && !strings.EqualFold(part, "latest") {
-            return part
-        }
-    }
-    // Fallback: if looks like a plain tag and not latest, return it
-    if !strings.ContainsAny(s, " \t\n") && !strings.EqualFold(s, "latest") {
-        return s
     }
     return ""
 }
